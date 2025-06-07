@@ -4,52 +4,45 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import FancyArrow
 from matplotlib.animation import FuncAnimation
 
-def compute_robot_path(path_type, radius, T, n):
+def compute_robot_path(path_type, radius, T, n, scale=1.0):
     t = np.linspace(0, T, n)
+    
     if path_type == 'circle':    
         theta_path = 2 * np.pi * t / T
         x_path = radius * np.cos(theta_path - (np.pi / 2))
         y_path = radius * np.sin(theta_path - (np.pi / 2))
+
     elif path_type == 'square':
-        # Total perimeter time divided into 4 edges
         edge_time = T / 4
-        
-        # Initialize arrays
         x_path = np.zeros_like(t)
         y_path = np.zeros_like(t)
         theta_path = np.zeros_like(t)
         
         for i, time in enumerate(t):
-            # Find which edge the robot is on
-            phase = (time % T) / edge_time  # from 0 to 4
-            
+            phase = (time % T) / edge_time
             if phase < 1:
-                # Bottom edge: x goes from -radius to +radius, y = -radius
                 x_path[i] = -radius + 2 * radius * phase
                 y_path[i] = -radius
-                theta_path[i] = 0  # facing right
+                theta_path[i] = 0
             elif phase < 2:
-                # Right edge: x = radius, y goes from -radius to +radius
                 x_path[i] = radius
                 y_path[i] = -radius + 2 * radius * (phase - 1)
-                theta_path[i] = np.pi / 2  # facing up
+                theta_path[i] = np.pi / 2
             elif phase < 3:
-                # Top edge: x goes from +radius to -radius, y = radius
                 x_path[i] = radius - 2 * radius * (phase - 2)
                 y_path[i] = radius
-                theta_path[i] = np.pi  # facing left
+                theta_path[i] = np.pi
             else:
-                # Left edge: x = -radius, y goes from +radius to -radius
                 x_path[i] = -radius
                 y_path[i] = radius - 2 * radius * (phase - 3)
-                theta_path[i] = -np.pi / 2  # facing down
+                theta_path[i] = -np.pi / 2
+
     elif path_type == 'triangle':
         edge_time = T / 3
         x_path = np.zeros_like(t)
         y_path = np.zeros_like(t)
         theta_path = np.zeros_like(t)
 
-        # Triangle vertices (equilateral centered at origin)
         angles = np.deg2rad([90, 210, 330])
         vertices = [(radius * np.cos(a), radius * np.sin(a)) for a in angles]
 
@@ -64,10 +57,24 @@ def compute_robot_path(path_type, radius, T, n):
             x_path[i] = x0 + (x1 - x0) * local_phase
             y_path[i] = y0 + (y1 - y0) * local_phase
             theta_path[i] = np.arctan2(y1 - y0, x1 - x0)
-        
+    elif path_type == 'line_horizon':
+        # Move from x = -radius to x = +radius, y = 0
+        x_path = np.linspace(-radius, radius, n)
+        y_path = np.zeros_like(x_path)
+        theta_path = np.zeros_like(x_path)  # facing right (0 rad)
+    elif path_type == 'line_vert':
+        # Move from y = -radius to y = +radius, x = 0
+        y_path = np.linspace(-radius, radius, n)
+        x_path = np.zeros_like(y_path)
+        theta_path = np.zeros_like(y_path)  # facing right (0 rad)
+
     else:
-        raise ValueError("Unsupported path_type. Use 'circle' or 'square'.")
-        
+        raise ValueError("Unsupported path_type. Use 'circle', 'square', or 'triangle'.")
+
+    # Apply global scaling
+    x_path *= scale
+    y_path *= scale
+
     return t, theta_path, x_path, y_path
 
 def compute_velocities(radius, omega_z, theta_path, n):
@@ -117,7 +124,7 @@ def compute_vri_data(vx, vy, omega_z, a, b, n):
             vri_data[i, w] = (vx[i] - vix) / cos_gamma
     return vri_data
 
-def setup_figure(radius, t, omega_data, vi_data, vri_data):
+def setup_figure(radius, t, omega_data, vi_data, vri_data, scale):
     fig = plt.figure(figsize=(15, 10))
 
     ax_left = fig.add_subplot(1, 2, 1)
@@ -128,8 +135,8 @@ def setup_figure(radius, t, omega_data, vi_data, vri_data):
 
     # Left plot setup
     ax_left.set_aspect('equal')
-    ax_left.set_xlim(-radius - 0.5, radius + 0.5)
-    ax_left.set_ylim(-radius - 0.5, radius + 0.5)
+    ax_left.set_xlim((-radius - 0.5)*scale, (radius + 0.5)*scale)
+    ax_left.set_ylim((-radius - 0.5)*scale, (radius + 0.5)*scale)
     ax_left.set_title("Backward Kinematic Model of a 4-Wheel Mecanum Drive Base")
     ax_left.grid()
 
@@ -168,15 +175,15 @@ def setup_figure(radius, t, omega_data, vi_data, vri_data):
     return fig, ax_left, ax_right_top, ax_right_bot, wheel_colors, vri_colors, vi_colors
 
 def add_static_arrows(ax):
-    arrows = [
+    cords = [
         {'dx': 1, 'dy': 0, 'color': 'limegreen', 'label': 'World X axis'},
         {'dx': 0, 'dy': 1, 'color': 'red', 'label': 'World Y axis'}
     ]
-    for arrow_params in arrows:
-        arrow = FancyArrow(0, 0, arrow_params['dx'], arrow_params['dy'],
+    for cords_params in cords:
+        arrows = FancyArrow(0, 0, cords_params['dx'], cords_params['dy'],
                            width=0.001, head_width=0.05, head_length=0.05,
-                           color=arrow_params['color'], zorder=2, label=arrow_params['label'])
-        ax.add_patch(arrow)
+                           color=cords_params['color'], zorder=2, label=cords_params['label'])
+        ax.add_patch(arrows)
 
 def get_square_frame(x, y, a, b, yaw=0):
     corners = np.array([[b, a], [b, -a], [-b, -a], [-b, a], [b, a]])
@@ -184,14 +191,13 @@ def get_square_frame(x, y, a, b, yaw=0):
     rotated = corners @ rot.T
     return rotated[:, 0] + x, rotated[:, 1] + y
 
-def run_animation(R, a, b, T, radius, pathtype):
+def run_animation(R, a, b, T, radius, pathtype, scale):
     dt = 0.1
     n = int(T / dt)
-
     omega = 2 * np.pi / T
     omega_z = omega / radius
 
-    t, theta_path, x_path, y_path = compute_robot_path(pathtype, radius, T, n)
+    t, theta_path, x_path, y_path = compute_robot_path(pathtype, radius, T, n, scale)
     # vx, vy = compute_velocities(radius, omega_z, theta_path, n)
     vx, vy = compute_velocity_vectors(x_path, y_path, dt)
     omega_data = compute_omega_data(vx, vy, a, b, omega_z, R, n)
@@ -199,7 +205,7 @@ def run_animation(R, a, b, T, radius, pathtype):
     vri_data = compute_vri_data(vx, vy, omega_z, a, b, n)
     gamma = [np.pi/4, -np.pi/4, np.pi/4, -np.pi/4]
 
-    fig, ax_left, ax_right_top, ax_right_bot, wheel_colors, vri_colors, vi_colors = setup_figure(radius, t, omega_data, vi_data, vri_data)
+    fig, ax_left, ax_right_top, ax_right_bot, wheel_colors, vri_colors, vi_colors = setup_figure(radius, t, omega_data, vi_data, vri_data, scale)
     add_static_arrows(ax_left)
 
     path_line, = ax_left.plot(x_path, y_path, '-' ,color='gray', label='Path')
@@ -213,7 +219,8 @@ def run_animation(R, a, b, T, radius, pathtype):
     total_velocity_arrows = [None] * 4
     omega_z_arrow = None
     v_arrow = None
-
+    vxy_arrows = [None] * 2
+    
     line_segments = [ax_right_top.plot([], [], color=wheel_colors[i])[0] for i in range(4)]
     scatter_points = [ax_right_top.plot([], [], 'o', color=wheel_colors[i])[0] for i in range(4)]
 
@@ -230,7 +237,7 @@ def run_animation(R, a, b, T, radius, pathtype):
     scale = 0.05
 
     def update(frame):
-        nonlocal omega_z_arrow, wheel_arrows, rot_arrows, v_arrow, total_velocity_arrows
+        nonlocal omega_z_arrow, wheel_arrows, rot_arrows, v_arrow, total_velocity_arrows, vxy_arrows
 
         x, y = x_path[frame], y_path[frame]
         robot_marker.set_data([x], [y])
@@ -248,9 +255,10 @@ def run_animation(R, a, b, T, radius, pathtype):
             if total_velocity_arrows[i]: 
                 total_velocity_arrows[i].remove()
                 total_velocity_arrows[i] = None
-            if rot_arrows[i]:
-                rot_arrows[i].remove()
-                rot_arrows[i] = None
+        for i in range(2):
+            if vxy_arrows[i]:
+                vxy_arrows[i].remove()
+                vxy_arrows = None
         if v_arrow: 
             v_arrow.remove()
             v_arrow = None
@@ -277,6 +285,13 @@ def run_animation(R, a, b, T, radius, pathtype):
             wheel_arrows[i] = ax_left.add_patch(FancyArrow(wx, wy, ax_comp, ay_comp,
                 width=0.01, head_width=0.05, head_length=0.05, color='black', zorder=2))
 
+        vxy_colors = [{'color': 'red'},{'color': 'green'}]
+        for i in range(2):
+            for vxy_params in vxy_colors:
+               vxy_arrows[i] = ax_left.add_patch(FancyArrow(x, y, arrow_length, ay_comp,
+                           width=0.001, head_width=0.05, head_length=0.05,
+                           color=vxy_params['color'], zorder=2))
+            
         # rotational velocity arrows
         # rotational velocity arrows - updated to match vri_data values with roller directions
         scale_vri = 2.0  # adjust scale for visibility
@@ -339,7 +354,7 @@ def run_animation(R, a, b, T, radius, pathtype):
         return [robot_marker, robot_frame, *wheel_lines, *line_segments,
                 *scatter_points, time_line, v_arrow,
                 *wheel_arrows, *rot_arrows, *total_velocity_arrows,
-                *vri_lines, *vri_scatter, *vi_lines, *vi_scatter]
+                *vri_lines, *vri_scatter, *vi_lines, *vi_scatter, *vxy_arrows]
 
     ani = FuncAnimation(fig, update, frames=n, interval=10, blit=True)
 
@@ -354,8 +369,8 @@ def run_animation(R, a, b, T, radius, pathtype):
 
     plt.show()
 
-def main(pathtype, R, a, b, T, radius):
-    run_animation(R, a, b, T, radius, pathtype)
+def main(pathtype, R, a, b, T, radius, scale):
+    run_animation(R, a, b, T, radius, pathtype, scale)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="4-Wheel Mecanum Robot Simulation")
@@ -365,7 +380,8 @@ if __name__ == '__main__':
     parser.add_argument('--T', type=int, default=30, help='Time of one period [s]')
     parser.add_argument('--radius', type=float, default=2.0, help='Radius of circular path [m]')
     parser.add_argument('--pathtype', type=str, default='circle', help='Shape of the path')
+    parser.add_argument('--scale', type=int, default=1, help='Scale of the path')
     
     args = parser.parse_args()
     
-    main(R=args.R, a=args.a, b=args.b, T=args.T, radius=args.radius, pathtype=args.pathtype)
+    main(R=args.R, a=args.a, b=args.b, T=args.T, radius=args.radius, pathtype=args.pathtype, scale=args.scale)
