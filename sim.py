@@ -3,6 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyArrow
 from matplotlib.animation import FuncAnimation
+from matplotlib.artist import Artist
+
+import sys
 
 def compute_robot_path(path_type, radius, T, n, scale=1.0):
     t = np.linspace(0, T, n)
@@ -216,7 +219,7 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
     wheel_lines = [ax_left.plot([], [], color=wheel_colors[i], lw=5)[0] for i in range(4)]
     wheel_arrows = [None] * 4
     rot_arrows = [None] * 4
-    total_velocity_arrows = [None] * 4
+    # total_velocity_arrows = [None] * 4
     omega_z_arrow = None
     v_arrow = None
     vxy_arrows = [None] * 2
@@ -237,7 +240,8 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
     scale = 0.05
 
     def update(frame):
-        nonlocal omega_z_arrow, wheel_arrows, rot_arrows, v_arrow, total_velocity_arrows, vxy_arrows
+        print(f"Frame {frame} update start")
+        nonlocal omega_z_arrow, wheel_arrows, rot_arrows, v_arrow, vxy_arrows
 
         x, y = x_path[frame], y_path[frame]
         robot_marker.set_data([x], [y])
@@ -252,13 +256,13 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
             if rot_arrows[i]: 
                 rot_arrows[i].remove()
                 rot_arrows[i] = None
-            if total_velocity_arrows[i]: 
-                total_velocity_arrows[i].remove()
-                total_velocity_arrows[i] = None
+            # if total_velocity_arrows[i]: 
+            #     total_velocity_arrows[i].remove()
+            #     total_velocity_arrows[i] = None
         for i in range(2):
             if vxy_arrows[i]:
                 vxy_arrows[i].remove()
-                vxy_arrows = None
+                vxy_arrows[i] = None
         if v_arrow: 
             v_arrow.remove()
             v_arrow = None
@@ -284,13 +288,6 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
 
             wheel_arrows[i] = ax_left.add_patch(FancyArrow(wx, wy, ax_comp, ay_comp,
                 width=0.01, head_width=0.05, head_length=0.05, color='black', zorder=2))
-
-        vxy_colors = [{'color': 'red'},{'color': 'green'}]
-        for i in range(2):
-            for vxy_params in vxy_colors:
-               vxy_arrows[i] = ax_left.add_patch(FancyArrow(x, y, arrow_length, ay_comp,
-                           width=0.001, head_width=0.05, head_length=0.05,
-                           color=vxy_params['color'], zorder=2))
             
         # rotational velocity arrows
         # rotational velocity arrows - updated to match vri_data values with roller directions
@@ -323,18 +320,28 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
                              label=r'$\vec{v}$' if frame == 0 else None)
         ax_left.add_patch(v_arrow)
 
+        vxy_params = [{'color': 'red', 'dx': vx[frame], 'dy': 0},
+                      {'color': 'green', 'dx': 0, 'dy': vy[frame]}]
+        for i, vxy_param in enumerate(vxy_params):
+            if vxy_arrows[i]:
+                vxy_arrows[i].remove()
+            vxy_arrows[i] = FancyArrow(x, y, vxy_param['dx'], vxy_param['dy'],
+                                    width=0.001, head_width=0.05, head_length=0.05,
+                                    color=vxy_param['color'], zorder=2)
+            ax_left.add_patch(vxy_arrows[i])
+            
         # total velocity vectors v_i
-        for i in range(4):
-            wx, wy = x + offsets[i][0], y + offsets[i][1]
-            rix, riy = offsets[i]
-            v_rot_x = -omega_z * riy
-            v_rot_y = omega_z * rix
-            vix = vx[frame] + v_rot_x
-            viy = vy[frame] + v_rot_y
-            total_velocity_arrows[i] = ax_left.add_patch(FancyArrow(wx, wy, vix, viy,
-                width=0.005, head_width=0.03, head_length=0.03,
-                color='limegreen', zorder=2,
-                label=r'$\vec{v}_i$' if frame == 0 and i == 0 else None))
+        # for i in range(4):
+        #     wx, wy = x + offsets[i][0], y + offsets[i][1]
+        #     rix, riy = offsets[i]
+        #     v_rot_x = -omega_z * riy
+        #     v_rot_y = omega_z * rix
+        #     vix = vx[frame] + v_rot_x
+        #     viy = vy[frame] + v_rot_y
+        #     total_velocity_arrows[i] = ax_left.add_patch(FancyArrow(wx, wy, vix, viy,
+        #         width=0.005, head_width=0.03, head_length=0.03,
+        #         color='limegreen', zorder=2,
+        #         label=r'$\vec{v}_i$' if frame == 0 and i == 0 else None))
 
         # Update omega plots
         time_line.set_xdata([t[frame]])
@@ -351,10 +358,28 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
 
         if frame == 0:
             ax_left.legend(loc='best', fontsize='small')
-        return [robot_marker, robot_frame, *wheel_lines, *line_segments,
+            
+        print("Update finished, checking artists...")
+
+        items = [robot_marker, robot_frame, *wheel_lines, *line_segments,
                 *scatter_points, time_line, v_arrow,
-                *wheel_arrows, *rot_arrows, *total_velocity_arrows,
+                *wheel_arrows, *rot_arrows,
                 *vri_lines, *vri_scatter, *vi_lines, *vi_scatter, *vxy_arrows]
+
+        for i, item in enumerate(items):
+            if item is None:
+                print(f"❌ Item {items[i]} is None")
+            elif not isinstance(item, Artist):
+                print(f"❌ Item {i} is not Artist: {type(item)}")
+            else:
+                print(f"✅ Item {i}: OK")
+
+        return items
+
+        # return [robot_marker, robot_frame, *wheel_lines, *line_segments,
+        #         *scatter_points, time_line, v_arrow,
+        #         *wheel_arrows, *rot_arrows,
+        #         *vri_lines, *vri_scatter, *vi_lines, *vi_scatter, *vxy_arrows]
 
     ani = FuncAnimation(fig, update, frames=n, interval=10, blit=True)
 
