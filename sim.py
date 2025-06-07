@@ -1,0 +1,263 @@
+import argparse
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import FancyArrow
+from matplotlib.animation import FuncAnimation
+
+def compute_robot_path(radius, T, n):
+    t = np.linspace(0, T, n)
+    theta_path = 2 * np.pi * t / T
+    x_path = radius * np.cos(theta_path - (np.pi / 2))
+    y_path = radius * np.sin(theta_path - (np.pi / 2))
+    return t, theta_path, x_path, y_path
+
+def compute_velocities(radius, omega_z, theta_path, n):
+    vx = -radius * omega_z * np.sin(theta_path)
+    vy =  radius * omega_z * np.cos(theta_path)
+    return vx, vy
+
+def compute_omega_data(vx, vy, a, b, omega_z, R, n):
+    omega_data = np.zeros((n, 4))
+    for i in range(n):
+        vxi, vyi = vx[i], vy[i]
+        wz = omega_z
+        omega_data[i, 0] = (vxi - vyi - (a + b) * wz) / R
+        omega_data[i, 1] = (vxi + vyi + (a + b) * wz) / R
+        omega_data[i, 2] = (vxi + vyi - (a + b) * wz) / R
+        omega_data[i, 3] = (vxi - vyi + (a + b) * wz) / R
+    return omega_data
+
+def compute_vri_data(vx, vy, omega_z, a, b, n):
+    gamma = [np.pi/4, -np.pi/4, np.pi/4, -np.pi/4]
+    offsets = [[b, a], [b, -a], [-b, -a], [-b, a]]
+    vri_data = np.zeros((n, 4))
+    for i in range(n):
+        for w in range(4):
+            rix, riy = offsets[w]
+            v_rot_x = -omega_z * riy
+            vix = vx[i] + v_rot_x
+
+            cos_gamma = np.cos(gamma[w])
+            cos_gamma = cos_gamma if abs(cos_gamma) >= 1e-6 else 1e-6
+
+            if vx[i] > 0:
+                vri_data[i, w] = (vx[i] - vix) / cos_gamma
+            elif vx[i] == 0:
+                vri_data[i, w] = 0
+            else:
+                vri_data[i, w] = (vx[i] - vix) / -cos_gamma
+    return vri_data
+
+def setup_figure(radius, t, omega_data, vri_data):
+    fig = plt.figure(figsize=(15, 10))
+
+    ax_left = fig.add_subplot(1, 2, 1)
+    ax_right_top = fig.add_subplot(2, 2, 2)
+    ax_right_bot = fig.add_subplot(2, 2, 4)
+
+    fig.tight_layout(pad=5.0)
+
+    # Left plot setup
+    ax_left.set_aspect('equal')
+    ax_left.set_xlim(-radius - 0.5, radius + 0.5)
+    ax_left.set_ylim(-radius - 0.5, radius + 0.5)
+    ax_left.set_title("Backward Kinematic Model of a 4-Wheel Mecanum Drive Base")
+    ax_left.grid()
+
+    # Omega plot (top right)
+    wheel_colors = ['red', 'green', 'blue', 'magenta']
+    labels = [r'$\omega_1$', r'$\omega_2$', r'$\omega_3$', r'$\omega_4$']
+    for i in range(4):
+        ax_right_top.plot(t, omega_data[:, i], label=labels[i], color=wheel_colors[i], alpha=0.2)
+
+    ax_right_top.set_xlim(t[0], t[-1])
+    ax_right_top.set_ylim(np.min(omega_data) * 1.1, np.max(omega_data) * 1.1)
+    ax_right_top.set_xlabel("Time [s]")
+    ax_right_top.set_ylabel("Angular Velocity [rad/s]")
+    ax_right_top.set_title("Wheel Angular Velocities Over Time")
+    ax_right_top.grid(True)
+    ax_right_top.legend(loc='best', fontsize='small')
+
+    # vri plot (bottom right)
+    vri_colors = ['cyan', 'magenta', 'orange', 'lime']
+    vri_labels = [r'$v_{r1}$', r'$v_{r2}$', r'$v_{r3}$', r'$v_{r4}$']
+    for i in range(4):
+        ax_right_bot.plot(t, vri_data[:, i], label=vri_labels[i], color=vri_colors[i], alpha=0.2)
+
+    ax_right_bot.set_xlim(t[0], t[-1])
+    ax_right_bot.set_ylim(np.min(vri_data) * 1.1, np.max(vri_data) * 1.1)
+    ax_right_bot.set_xlabel("Time [s]")
+    ax_right_bot.set_ylabel(r"$v_{ri}$")
+    ax_right_bot.set_title("Calculated $v_{ri}$ Over Time")
+    ax_right_bot.grid(True)
+    ax_right_bot.legend(fontsize='small')
+
+    return fig, ax_left, ax_right_top, ax_right_bot, wheel_colors, vri_colors
+
+def add_static_arrows(ax):
+    arrows = [
+        {'dx': 1, 'dy': 0, 'color': 'limegreen', 'label': 'World X axis'},
+        {'dx': 0, 'dy': 1, 'color': 'red', 'label': 'World Y axis'}
+    ]
+    for arrow_params in arrows:
+        arrow = FancyArrow(0, 0, arrow_params['dx'], arrow_params['dy'],
+                           width=0.001, head_width=0.05, head_length=0.05,
+                           color=arrow_params['color'], zorder=2, label=arrow_params['label'])
+        ax.add_patch(arrow)
+
+def get_square_frame(x, y, a, b, yaw=0):
+    corners = np.array([[b, a], [b, -a], [-b, -a], [-b, a], [b, a]])
+    rot = np.array([[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw),  np.cos(yaw)]])
+    rotated = corners @ rot.T
+    return rotated[:, 0] + x, rotated[:, 1] + y
+
+def run_animation(R, a, b, T, radius):
+    dt = 0.1
+    n = int(T / dt)
+
+    omega = 2 * np.pi / T
+    omega_z = omega / radius
+
+    t, theta_path, x_path, y_path = compute_robot_path(radius, T, n)
+    vx, vy = compute_velocities(radius, omega_z, theta_path, n)
+    omega_data = compute_omega_data(vx, vy, a, b, omega_z, R, n)
+    vri_data = compute_vri_data(vx, vy, omega_z, a, b, n)
+
+    fig, ax_left, ax_right_top, ax_right_bot, wheel_colors, vri_colors = setup_figure(radius, t, omega_data, vri_data)
+    add_static_arrows(ax_left)
+
+    path_line, = ax_left.plot(x_path, y_path, '-' ,color='gray', label='Path')
+    path_line.set_dashes([10, 10])
+    robot_marker, = ax_left.plot([], [], 'ro', markersize=4, label='Robot Center')
+    robot_frame, = ax_left.plot([], [], 'k', lw=1, ls='solid')
+
+    wheel_lines = [ax_left.plot([], [], color=wheel_colors[i], lw=5)[0] for i in range(4)]
+    wheel_arrows = [None] * 4
+    rot_arrows = [None] * 4
+    total_velocity_arrows = [None] * 4
+    omega_z_arrow = None
+    v_arrow = None
+
+    line_segments = [ax_right_top.plot([], [], color=wheel_colors[i])[0] for i in range(4)]
+    scatter_points = [ax_right_top.plot([], [], 'o', color=wheel_colors[i])[0] for i in range(4)]
+
+    vri_lines = [ax_right_bot.plot([], [], color=vri_colors[i])[0] for i in range(4)]
+    vri_scatter = [ax_right_bot.plot([], [], 'o', color=vri_colors[i])[0] for i in range(4)]
+
+    time_line = ax_right_top.axvline(t[0], color='black', linestyle='--')
+
+    offsets = [[b, a], [b, -a], [-b, -a], [-b, a]]
+    ang = np.pi / 2
+    scale = 0.05
+
+    def update(frame):
+        nonlocal omega_z_arrow, wheel_arrows, rot_arrows, v_arrow, total_velocity_arrows
+
+        x, y = x_path[frame], y_path[frame]
+        robot_marker.set_data([x], [y])
+        rx, ry = get_square_frame(x, y, a, b)
+        robot_frame.set_data(rx, ry)
+
+        # Remove old arrows
+        for i in range(4):
+            if wheel_arrows[i]: wheel_arrows[i].remove()
+            if rot_arrows[i]: rot_arrows[i].remove()
+            if total_velocity_arrows[i]: total_velocity_arrows[i].remove()
+        if v_arrow: v_arrow.remove()
+        if omega_z_arrow: omega_z_arrow.remove()
+
+        # Draw wheels and omega arrows
+        for i in range(4):
+            wx = x + offsets[i][0]
+            wy = y + offsets[i][1]
+
+            dx = 0.1 * np.cos(ang)
+            dy = 0.1 * np.sin(ang)
+
+            wheel_lines[i].set_data([wx - dx, wx + dx], [wy - dy, wy + dy])
+            wheel_lines[i].set_zorder(1)
+
+            arrow_length = omega_data[frame, i] * scale
+            ax_comp = arrow_length * np.cos(ang)
+            ay_comp = arrow_length * np.sin(ang)
+
+            wheel_arrows[i] = ax_left.add_patch(FancyArrow(wx, wy, ax_comp, ay_comp,
+                width=0.01, head_width=0.05, head_length=0.05, color='black', zorder=2))
+
+        # rotational velocity arrows
+        for i in range(4):
+            wx, wy = x + offsets[i][0], y + offsets[i][1]
+            rix, riy = offsets[i]
+            vrx = -omega_z * riy
+            vry = omega_z * rix
+            rot_arrows[i] = ax_left.add_patch(FancyArrow(wx, wy, vrx, vry,
+                width=0.005, head_width=0.03, head_length=0.03,
+                color='cyan', zorder=2,
+                label=r'$\vec{v_{ri}}$' if frame == 0 and i == 0 else None))
+
+        # translational velocity vector
+        v_arrow = FancyArrow(x, y, vx[frame], vy[frame],
+                             width=0.01, head_width=0.05, head_length=0.05,
+                             color='blue', zorder=2,
+                             label=r'$\vec{v}$' if frame == 0 else None)
+        ax_left.add_patch(v_arrow)
+
+        # total velocity vectors v_i
+        for i in range(4):
+            wx, wy = x + offsets[i][0], y + offsets[i][1]
+            rix, riy = offsets[i]
+            v_rot_x = -omega_z * riy
+            v_rot_y = omega_z * rix
+            vix = vx[frame] + v_rot_x
+            viy = vy[frame] + v_rot_y
+            total_velocity_arrows[i] = ax_left.add_patch(FancyArrow(wx, wy, vix, viy,
+                width=0.005, head_width=0.03, head_length=0.03,
+                color='limegreen', zorder=2,
+                label=r'$\vec{v}_i$' if frame == 0 and i == 0 else None))
+
+        # Update omega plots
+        time_line.set_xdata([t[frame]])
+        for i in range(4):
+            line_segments[i].set_data(t[:frame+1], omega_data[:frame+1, i])
+            scatter_points[i].set_data([t[frame]], [omega_data[frame, i]])
+
+        # Update vri plots
+        for i in range(4):
+            vri_lines[i].set_data(t[:frame+1], vri_data[:frame+1, i])
+            vri_scatter[i].set_data([t[frame]], [vri_data[frame, i]])
+
+        if frame == 0:
+            ax_left.legend(loc='upper left', fontsize='small')
+
+        return [robot_marker, robot_frame, *wheel_lines, *line_segments,
+                *scatter_points, time_line, v_arrow,
+                *wheel_arrows, *rot_arrows, *total_velocity_arrows,
+                *vri_lines, *vri_scatter]
+
+    ani = FuncAnimation(fig, update, frames=n, interval=10, blit=True)
+
+    mng = plt.get_current_fig_manager()
+    try:
+        mng.window.state('zoomed')
+    except AttributeError:
+        try:
+            mng.window.showMaximized()
+        except AttributeError:
+            mng.full_screen_toggle()
+
+    plt.show()
+
+def main(R, a, b, T, radius):
+    run_animation(R, a, b, T, radius)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="4-Wheel Mecanum Robot Simulation")
+    parser.add_argument('--R', type=float, default=0.05, help='Wheel radius [m]')
+    parser.add_argument('--a', type=float, default=0.3, help='Half of robot length [m]')
+    parser.add_argument('--b', type=float, default=0.3, help='Half of robot width [m]')
+    parser.add_argument('--T', type=int, default=30, help='Time of one period [s]')
+    parser.add_argument('--radius', type=float, default=2.0, help='Radius of circular path [m]')
+    
+    args = parser.parse_args()
+    
+    main(R=args.R, a=args.a, b=args.b, T=args.T, radius=args.radius)
