@@ -1,2 +1,3 @@
-.mecannum-env/
+.mecanum-env/
 MecanumVehicle.code-workspace/
+*.pdf
