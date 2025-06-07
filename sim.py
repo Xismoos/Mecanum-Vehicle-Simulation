@@ -237,10 +237,9 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
 
     offsets = [[b, a], [b, -a], [-b, -a], [-b, a]]
     ang = np.pi / 2
-    scale = 0.05
 
     def update(frame):
-        print(f"Frame {frame} update start")
+        # print(f"Frame {frame} update start")
         nonlocal omega_z_arrow, wheel_arrows, rot_arrows, v_arrow, vxy_arrows
 
         x, y = x_path[frame], y_path[frame]
@@ -276,13 +275,13 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
             wx = x + offsets[i][0]
             wy = y + offsets[i][1]
 
-            dx = 0.1 * np.cos(ang)
+            dx = 0.3 * np.cos(ang)
             dy = 0.1 * np.sin(ang)
 
             wheel_lines[i].set_data([wx - dx, wx + dx], [wy - dy, wy + dy])
             wheel_lines[i].set_zorder(1)
 
-            arrow_length = omega_data[frame, i] * scale
+            arrow_length = omega_data[frame, i] *0.025
             ax_comp = arrow_length * np.cos(ang)
             ay_comp = arrow_length * np.sin(ang)
 
@@ -320,8 +319,8 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
                              label=r'$\vec{v}$' if frame == 0 else None)
         ax_left.add_patch(v_arrow)
 
-        vxy_params = [{'color': 'red', 'dx': vx[frame], 'dy': 0},
-                      {'color': 'green', 'dx': 0, 'dy': vy[frame]}]
+        vxy_params = [{'color': 'green', 'dx': vx[frame], 'dy': 0},
+                      {'color': 'red', 'dx': 0, 'dy': vy[frame]}]
         for i, vxy_param in enumerate(vxy_params):
             if vxy_arrows[i]:
                 vxy_arrows[i].remove()
@@ -359,20 +358,20 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
         if frame == 0:
             ax_left.legend(loc='best', fontsize='small')
             
-        print("Update finished, checking artists...")
+        # print("Update finished, checking artists...")
 
         items = [robot_marker, robot_frame, *wheel_lines, *line_segments,
                 *scatter_points, time_line, v_arrow,
                 *wheel_arrows, *rot_arrows,
                 *vri_lines, *vri_scatter, *vi_lines, *vi_scatter, *vxy_arrows]
 
-        for i, item in enumerate(items):
-            if item is None:
-                print(f"❌ Item {items[i]} is None")
-            elif not isinstance(item, Artist):
-                print(f"❌ Item {i} is not Artist: {type(item)}")
-            else:
-                print(f"✅ Item {i}: OK")
+        # for i, item in enumerate(items):
+        #     if item is None:
+        #         print(f"❌ Item {items[i]} is None")
+        #     elif not isinstance(item, Artist):
+        #         print(f"❌ Item {i} is not Artist: {type(item)}")
+        #     else:
+        #         print(f"✅ Item {i}: OK")
 
         return items
 
