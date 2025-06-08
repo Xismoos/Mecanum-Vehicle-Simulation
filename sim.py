@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import FancyArrow
 from matplotlib.animation import FuncAnimation
 from matplotlib.artist import Artist
+from scipy.ndimage import gaussian_filter1d
 
 import sys
 
@@ -80,6 +81,11 @@ def compute_robot_path(path_type, radius, T, n, scale=1.0):
 
     return t, theta_path, x_path, y_path
 
+def compute_omega_z(theta_path, dt):
+    omega_z = np.gradient(theta_path, dt)
+    omega_z = gaussian_filter1d(omega_z, sigma=1)
+    return omega_z
+
 def compute_velocities(radius, omega_z, theta_path, n):
     vx = -radius * omega_z * np.sin(theta_path)
     vy =  radius * omega_z * np.cos(theta_path)
@@ -94,38 +100,42 @@ def compute_omega_data(vx, vy, a, b, omega_z, R, n):
     omega_data = np.zeros((n, 4))
     for i in range(n):
         vxi, vyi = vx[i], vy[i]
-        wz = omega_z
-        omega_data[i, 0] = ( vxi - vyi + (-a - b) * wz) / R
-        omega_data[i, 1] = (vxi + vyi + (a + b) * wz) / R
-        omega_data[i, 2] = (vxi + vyi + (-a - b) * wz) / R
-        omega_data[i, 3] = (vxi - vyi + (a + b) * wz) / R
+        wz = omega_z[i]
+        omega_data[i, 0] = ( vxi - vyi + (-a - b) * wz) / R  # FL
+        omega_data[i, 1] = ( vxi + vyi + (a + b) * wz) / R  # FR
+        omega_data[i, 2] = ( vxi + vyi + (-a - b) * wz) / R  # RL
+        omega_data[i, 3] = ( vxi - vyi + (a + b) * wz) / R  # RR
     return omega_data
 
 def compute_vi_data(vx, vy, a, b, omega_z, n):
     vi_data = np.zeros((n, 4))
     for i in range(n):
         vxi, vyi = vx[i], vy[i]
-        wz = omega_z
-        vi_data[i, 0] = vxi - vyi + (-a - b) * wz
-        vi_data[i, 1] = vxi + vyi + (a + b) * wz
-        vi_data[i, 2] = vxi + vyi + (-a - b) * wz
-        vi_data[i, 3] = vxi - vyi + (a + b) * wz
+        wz = omega_z[i]
+        vi_data[i, 0] = ( vxi - vyi + (-a - b) * wz)  # FL
+        vi_data[i, 1] = ( vxi + vyi + (a + b) * wz) # FR
+        vi_data[i, 2] = ( vxi + vyi + (-a - b) * wz)  # RL
+        vi_data[i, 3] = ( vxi - vyi + (a + b) * wz)  # RR
     return vi_data
 
 def compute_vri_data(vx, vy, omega_z, a, b, n):
     gamma = [np.pi/4, -np.pi/4, np.pi/4, -np.pi/4]
-    offsets = [[b, a], [b, -a], [-b, -a], [-b, a]]
+    offsets = [[-b, a], [b, a], [-b, -a], [b, -a]]
     vri_data = np.zeros((n, 4))
+
     for i in range(n):
         for w in range(4):
             rix, riy = offsets[w]
-            v_rot_x = -omega_z * riy
-            vix = vx[i] + v_rot_x
+            # Full velocity at wheel = translational + rotational component at wheel center
+            vix = vx[i] - omega_z[i] * riy
+            viy = vy[i] + omega_z[i] * rix
 
-            cos_gamma = np.cos(gamma[w])
-            cos_gamma = cos_gamma if abs(cos_gamma) >= 1e-6 else 1e-6
-            vri_data[i, w] = (vx[i] - vix) / cos_gamma
-    return vri_data
+            # Project this velocity onto roller direction
+            dir_x = np.cos(gamma[w])
+            dir_y = np.sin(gamma[w])
+            vri_data[i, w] = vix * dir_x + viy * dir_y
+    return vri_data/2
+
 
 def setup_figure(radius, t, omega_data, vi_data, vri_data, scale):
     fig = plt.figure(figsize=(15, 10))
@@ -153,7 +163,7 @@ def setup_figure(radius, t, omega_data, vi_data, vri_data, scale):
     ax_right_top.set_ylim(np.min(omega_data) * 1.1, np.max(omega_data) * 1.1)
     ax_right_top.set_xlabel("Time [s]")
     ax_right_top.set_ylabel(r"Angular Velocity [$rad\cdot s^{-1}$]")
-    ax_right_top.set_title("Wheel Angular Velocities Over Time")
+    ax_right_top.set_title(r"Wheel Angular Velocities $\omega_i$ Over Time")
     ax_right_top.grid(True)
     ax_right_top.legend(loc='best', fontsize='small')
 
@@ -164,14 +174,13 @@ def setup_figure(radius, t, omega_data, vi_data, vri_data, scale):
     vri_labels = [r'$v_{r1}$', r'$v_{r2}$', r'$v_{r3}$', r'$v_{r4}$']
     for i in range(4):
         ax_right_bot.plot(t, vri_data[:, i], label=vri_labels[i], color=vri_colors[i], alpha=0.2)
-    for i in range(4):
-        ax_right_bot.plot(t, vi_data[:, i], label=vi_labels[i], color=vi_colors[i], alpha=0.2)
+        # ax_right_bot.plot(t, vi_data[:, i], label=vi_labels[i], color=vi_colors[i], alpha=0.2)
 
     ax_right_bot.set_xlim(t[0], t[-1])
-    ax_right_bot.set_ylim(np.min(vi_data) * 1.1, np.max(vi_data) * 1.1)
+    ax_right_bot.set_ylim(np.min(vri_data) * 1.1, np.max(vri_data) * 1.1)
     ax_right_bot.set_xlabel("Time [s]")
     ax_right_bot.set_ylabel(r" Velocity [$m \cdot s^{-1}$]")
-    ax_right_bot.set_title("Calculated $v_{ri}$ and $v_{i}$ Over Time")
+    ax_right_bot.set_title("Calculated $v_{ri}$ Over Time")
     ax_right_bot.grid(True)
     ax_right_bot.legend(fontsize='small')
 
@@ -198,11 +207,11 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
     dt = 0.1
     n = int(T / dt)
     omega = 2 * np.pi / T
-    omega_z = omega / radius
 
     t, theta_path, x_path, y_path = compute_robot_path(pathtype, radius, T, n, scale)
     # vx, vy = compute_velocities(radius, omega_z, theta_path, n)
     vx, vy = compute_velocity_vectors(x_path, y_path, dt)
+    omega_z = compute_omega_z(theta_path, dt)
     omega_data = compute_omega_data(vx, vy, a, b, omega_z, R, n)
     vi_data = compute_vi_data(vx, vy, a, b, omega_z, n)
     vri_data = compute_vri_data(vx, vy, omega_z, a, b, n)
@@ -230,8 +239,8 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
     vri_lines = [ax_right_bot.plot([], [], color=vri_colors[i])[0] for i in range(4)]
     vri_scatter = [ax_right_bot.plot([], [], 'o', color=vri_colors[i])[0] for i in range(4)]
     
-    vi_lines = [ax_right_bot.plot([], [], color=vi_colors[i])[0] for i in range(4)]
-    vi_scatter = [ax_right_bot.plot([], [], 'o', color=vi_colors[i])[0] for i in range(4)]
+    # vi_lines = [ax_right_bot.plot([], [], color=vi_colors[i])[0] for i in range(4)]
+    # vi_scatter = [ax_right_bot.plot([], [], 'o', color=vi_colors[i])[0] for i in range(4)]
 
     time_line = ax_right_top.axvline(t[0], color='black', linestyle='--')
 
@@ -239,7 +248,7 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
     ang = np.pi / 2
 
     def update(frame):
-        # print(f"Frame {frame} update start")
+
         nonlocal omega_z_arrow, wheel_arrows, rot_arrows, v_arrow, vxy_arrows
 
         x, y = x_path[frame], y_path[frame]
@@ -281,12 +290,33 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
             wheel_lines[i].set_data([wx - dx, wx + dx], [wy - dy, wy + dy])
             wheel_lines[i].set_zorder(1)
 
-            arrow_length = omega_data[frame, i] *0.025
-            ax_comp = arrow_length * np.cos(ang)
-            ay_comp = arrow_length * np.sin(ang)
+            arrow_length = omega_data[frame, i] * 0.025
 
-            wheel_arrows[i] = ax_left.add_patch(FancyArrow(wx, wy, ax_comp, ay_comp,
-                width=0.01, head_width=0.05, head_length=0.05, color='black', zorder=2))
+            # Each wheel has a local spin axis direction (same every time)
+            # Use local fixed directions per wheel index:
+            # FL (0), FR (1), RL (2), RR (3)
+            # We'll define local spin directions like this:
+            axle_dirs  = [
+                    np.array([0, 1]),  # FL points upward
+                    np.array([0, 1]),  # FR points upward
+                    np.array([0, 1]),  # RL points upward
+                    np.array([0, 1]),  # RR points upward
+                    ]
+
+
+            arrow_length = 0.2 * np.clip(np.abs(omega_data[frame, i]), 0, 20) / 20.0
+            direction = np.sign(omega_data[frame, i]) * axle_dirs[i]
+
+            arrow_dx = arrow_length * direction[0]
+            arrow_dy = arrow_length * direction[1]
+
+            wheel_arrows[i] = ax_left.add_patch(FancyArrow(
+                wx, wy, arrow_dx, arrow_dy,
+                width=0.01, head_width=0.05, head_length=0.05,
+                color='black', zorder=2,
+                label=r'$\omega_i$' if frame == 0 and i == 0 else None
+            ))
+
             
         # rotational velocity arrows
         # rotational velocity arrows - updated to match vri_data values with roller directions
@@ -352,8 +382,8 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
         for i in range(4):
             vri_lines[i].set_data(t[:frame+1], vri_data[:frame+1, i])
             vri_scatter[i].set_data([t[frame]], [vri_data[frame, i]])
-            vi_lines[i].set_data(t[:frame+1], vi_data[:frame+1, i])
-            vi_scatter[i].set_data([t[frame]], [vi_data[frame, i]])
+            # vi_lines[i].set_data(t[:frame+1], vi_data[:frame+1, i])
+            # vi_scatter[i].set_data([t[frame]], [vi_data[frame, i]])
 
         if frame == 0:
             ax_left.legend(loc='best', fontsize='small')
@@ -363,7 +393,7 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
         items = [robot_marker, robot_frame, *wheel_lines, *line_segments,
                 *scatter_points, time_line, v_arrow,
                 *wheel_arrows, *rot_arrows,
-                *vri_lines, *vri_scatter, *vi_lines, *vi_scatter, *vxy_arrows]
+                *vri_lines, *vri_scatter, *vxy_arrows]
 
         # for i, item in enumerate(items):
         #     if item is None:
@@ -372,7 +402,7 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
         #         print(f"❌ Item {i} is not Artist: {type(item)}")
         #     else:
         #         print(f"✅ Item {i}: OK")
-
+        print(f"vx:{vx[i]}, vy:{vy[i]}, omega:{omega_data[i]}, Frame:{frame}")
         return items
 
         # return [robot_marker, robot_frame, *wheel_lines, *line_segments,
