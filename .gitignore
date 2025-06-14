@@ -1,5 +1,6 @@
 .mecanum-env/
 .mecanum-env-PC/
 MecanumVehicle.code-workspace/
+TechnicalReport.md
 *.pdf
 mecanum
