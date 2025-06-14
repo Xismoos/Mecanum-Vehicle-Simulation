@@ -1,8 +1,10 @@
 {
-	"folders": [
-		{
-			"path": "."
-		}
-	],
-	"settings": {"python.defaultInterpreterPath": "G:\\PROGRAMMING\\DPC-TEE\\MecanumVehicle\\.venv\\Scripts\\python.exe"}
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "J:/PROGRAMMING/DPC-TEE/MecanumVehicle/.mecanum-env/Scripts/python.exe"
+  }
 }

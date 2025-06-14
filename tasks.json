@@ -1,0 +1,14 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Install Dependencies",
+      "type": "shell",
+      "command": "${workspaceFolder}\\.mecanum-env\\Scripts\\python.exe",
+      "args": [
+        "-m", "pip", "install", "-r", "requirements.txt"
+      ],
+      "group": "build"
+    }
+  ]
+}
