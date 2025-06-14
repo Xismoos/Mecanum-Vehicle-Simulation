@@ -84,5 +84,5 @@ This project is open source and available under the MIT License.
 
 ### Example Screenshot
 
-![Simulation Example](Example.png)
+![Simulation Example](png/Example.png)
 > This project is useful for educational robotics, Mecanum kinematics understanding, and motion planning debugging.
