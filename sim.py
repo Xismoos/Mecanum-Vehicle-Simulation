@@ -101,14 +101,11 @@ def compute_omega_data(vx, vy, a, b, omega_z, R, n):
     for i in range(n):
         vxi, vyi = vx[i], vy[i]
         wz = omega_z[i]
-        omega_data[i, 0] = ( vxi + vyi + (-a - b) * wz) / R  # RL
+        omega_data[i, 0] = ( vxi + vyi + (-a - b) * wz) / R  # FL
         omega_data[i, 1] = ( vxi - vyi + (-a - b) * wz) / R  # FR
-        omega_data[i, 2] = ( vxi + vyi + (+a + b) * wz) / R  # FL
-        omega_data[i, 3] = ( vxi - vyi + (a + b) * wz) / R  # RR
-        # omega_data[i, 0] = ( vxi - vyi + (-a - b) * wz) / R  # FL
-        # omega_data[i, 1] = ( vxi + vyi + (+a + b) * wz) / R  # FR
-        # omega_data[i, 2] = ( vxi + vyi + (-a - b) * wz) / R  # RL
-        # omega_data[i, 3] = ( vxi - vyi + (+a + b) * wz) / R  # RR
+        omega_data[i, 2] = ( vxi + vyi + (+a + b) * wz) / R  # RR
+        omega_data[i, 3] = ( vxi - vyi + (a + b) * wz) / R  # RL
+
     return omega_data
 
 def compute_vi_data(vx, vy, a, b, omega_z, n):
