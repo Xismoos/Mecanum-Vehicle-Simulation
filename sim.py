@@ -83,7 +83,7 @@ def compute_robot_path(path_type, radius, T, n, scale=1.0):
 
 def compute_omega_z(theta_path, dt):
     omega_z = np.gradient(theta_path, dt)
-    omega_z = gaussian_filter1d(omega_z, sigma=2)
+    omega_z = gaussian_filter1d(omega_z, sigma=4)
     return omega_z
 
 def compute_velocities(radius, omega_z, theta_path, n):
@@ -101,10 +101,14 @@ def compute_omega_data(vx, vy, a, b, omega_z, R, n):
     for i in range(n):
         vxi, vyi = vx[i], vy[i]
         wz = omega_z[i]
-        omega_data[i, 0] = ( vxi + vyi + (+a + b) * wz) / R  # FL
+        omega_data[i, 0] = ( vxi + vyi + (-a - b) * wz) / R  # RL
         omega_data[i, 1] = ( vxi - vyi + (-a - b) * wz) / R  # FR
-        omega_data[i, 2] = ( vxi + vyi + (-a - b) * wz) / R  # RL
+        omega_data[i, 2] = ( vxi + vyi + (+a + b) * wz) / R  # FL
         omega_data[i, 3] = ( vxi - vyi + (a + b) * wz) / R  # RR
+        # omega_data[i, 0] = ( vxi - vyi + (-a - b) * wz) / R  # FL
+        # omega_data[i, 1] = ( vxi + vyi + (+a + b) * wz) / R  # FR
+        # omega_data[i, 2] = ( vxi + vyi + (-a - b) * wz) / R  # RL
+        # omega_data[i, 3] = ( vxi - vyi + (+a + b) * wz) / R  # RR
     return omega_data
 
 def compute_vi_data(vx, vy, a, b, omega_z, n):
@@ -133,7 +137,7 @@ def compute_vri_data(vx, vy, omega_z, n, offsets):
             dir_x = np.cos(gamma[w])
             dir_y = np.sin(gamma[w])
             vri_data[i, w] = vxi * dir_x + vyi * dir_y
-    return vri_data/4
+    return vri_data
 
 
 def setup_figure(radius, t, omega_data, vi_data, vri_data, scale):
@@ -156,7 +160,11 @@ def setup_figure(radius, t, omega_data, vi_data, vri_data, scale):
     wheel_colors = ['red', 'green', 'blue', 'magenta']
     labels = [r'$\omega_1$', r'$\omega_2$', r'$\omega_3$', r'$\omega_4$']
     for i in range(4):
-        ax_right_top.plot(t, omega_data[:, i], label=labels[i], color=wheel_colors[i], alpha=0.2)
+        if i % 2 != 0:
+            ax_right_top.plot(t, -omega_data[:, i], label=labels[i], color=wheel_colors[i], alpha=0.2)
+        else:
+            ax_right_top.plot(t, omega_data[:, i], label=labels[i], color=wheel_colors[i], alpha=0.2)
+            
     
     ax_right_top.set_xlim(t[0], t[-1])
     ax_right_top.set_ylim(np.min(omega_data) * 1.1, np.max(omega_data) * 1.1)
@@ -173,14 +181,18 @@ def setup_figure(radius, t, omega_data, vi_data, vri_data, scale):
     vri_colors = ['r', 'g','b', 'magenta']
     vri_labels = [r'$v_{r1}$', r'$v_{r2}$', r'$v_{r3}$', r'$v_{r4}$']
     for i in range(4):
-        ax_right_bot.plot(t, vri_data[:, i], label=vri_labels[i], color=vri_colors[i], alpha=0.2)
+        if i % 2 != 0:
+            ax_right_bot.plot(t, -vri_data[:, i], label=vri_labels[i], color=vri_colors[i], alpha=0.2)
+        else:
+            ax_right_bot.plot(t, vri_data[:, i], label=vri_labels[i], color=vri_colors[i], alpha=0.2)
+            
         # ax_right_bot.plot(t, vi_data[:, i], label=vi_labels[i], color=vi_colors[i], alpha=0.2)
 
     ax_right_bot.set_xlim(t[0], t[-1])
     ax_right_bot.set_ylim(np.min(vri_data) * 1.1, np.max(vri_data) * 1.1)
     ax_right_bot.set_xlabel("Time [s]")
     ax_right_bot.set_ylabel(r" Velocity [$m \cdot s^{-1}$]")
-    ax_right_bot.set_title("Calculated $v_{ri}$ Over Time")
+    ax_right_bot.set_title("Velocity components $v_{ri}$ Over Time")
     ax_right_bot.grid(True)
     ax_right_bot.legend(fontsize='small')
 
@@ -198,10 +210,19 @@ def add_static_arrows(ax):
         ax.add_patch(arrows)
 
 def get_square_frame(x, y, offsets, yaw=0):
-    corners = np.array([offsets])
-    rot = np.array([[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw),  np.cos(yaw)]])
+    corners = np.array(offsets)
+    
+    # Přidáme první bod znovu na konec (uzavření čtverce)
+    corners = np.vstack([corners, corners[0]])
+
+    rot = np.array([[np.cos(yaw), -np.sin(yaw)],
+                    [np.sin(yaw),  np.cos(yaw)]])
+    
     rotated = corners @ rot.T
-    return rotated[:, 0] + x, rotated[:, 1] + y
+    translated = rotated + np.array([x, y])
+    
+    return translated[:, 0], translated[:, 1]
+
 
 def run_animation(R, a, b, T, radius, pathtype, scale):
     dt = 0.1
@@ -281,13 +302,13 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
        
 
         # Draw wheels and omega arrows
-        for i in range(4):
-            rot_matrix = np.array([
+        rot_matrix = np.array([
                 [1, 0],
                 [0, 1]
-            ])
-
-            
+            ])  
+        
+        for i in range(4):
+             
             offset = np.array(offsets[i])
             offset_rot = rot_matrix @ offset
 
@@ -316,13 +337,12 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
                 wx, wy, arrow_dx, arrow_dy,
                 width=0.01, head_width=0.05, head_length=0.05,
                 color='black', zorder=2,
-                label=r'$v_i$' if frame == 0 and i == 0 else None
+                label=r'$\vec{v_i}$' if frame == 0 and i == 0 else None
 ))
 
             
         # rotational velocity arrows
-        # rotational velocity arrows - updated to match vri_data values with roller directions
-        scale_vri = 1.5  # adjust scale for visibility
+        scale_vri = 0.3  # adjust scale for visibility
 
         for i in range(4):
             wx, wy = x + offsets[i][0], y + offsets[i][1]
@@ -364,13 +384,22 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
         # Update omega plots
         time_line.set_xdata([t[frame]])
         for i in range(4):
-            line_segments[i].set_data(t[:frame+1], omega_data[:frame+1, i])
-            scatter_points[i].set_data([t[frame]], [omega_data[frame, i]])
+            if i % 2 != 0:
+               line_segments[i].set_data(t[:frame+1], -omega_data[:frame+1, i])
+               scatter_points[i].set_data([t[frame]], [-omega_data[frame, i]])         
+            else:
+                line_segments[i].set_data(t[:frame+1], omega_data[:frame+1, i])
+                scatter_points[i].set_data([t[frame]], [omega_data[frame, i]])
 
         # Update vri, vi plots
         for i in range(4):
-            vri_lines[i].set_data(t[:frame+1], vri_data[:frame+1, i])
-            vri_scatter[i].set_data([t[frame]], [vri_data[frame, i]])
+            if i % 2 != 0:
+                vri_lines[i].set_data(t[:frame+1], -vri_data[:frame+1, i])
+                vri_scatter[i].set_data([t[frame]], [-vri_data[frame, i]])
+            else:    
+                vri_lines[i].set_data(t[:frame+1], vri_data[:frame+1, i])
+                vri_scatter[i].set_data([t[frame]], [vri_data[frame, i]])
+            
             # vi_lines[i].set_data(t[:frame+1], vi_data[:frame+1, i])
             # vi_scatter[i].set_data([t[frame]], [vi_data[frame, i]])
 
@@ -384,20 +413,9 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
                 *wheel_arrows, *rot_arrows,
                 *vri_lines, *vri_scatter, *vxy_arrows]
 
-        # for i, item in enumerate(items):
-        #     if item is None:
-        #         print(f"❌ Item {items[i]} is None")
-        #     elif not isinstance(item, Artist):
-        #         print(f"❌ Item {i} is not Artist: {type(item)}")
-        #     else:
-        #         print(f"✅ Item {i}: OK")
         print(f"vri: {vri_data[frame]}, omega:{omega_data[frame]}, Frame:{frame}")
         return items
 
-        # return [robot_marker, robot_frame, *wheel_lines, *line_segments,
-        #         *scatter_points, time_line, v_arrow,
-        #         *wheel_arrows, *rot_arrows,
-        #         *vri_lines, *vri_scatter, *vi_lines, *vi_scatter, *vxy_arrows]
 
     ani = FuncAnimation(fig, update, frames=n, interval=10, blit=True)
 
@@ -420,7 +438,7 @@ if __name__ == '__main__':
     parser.add_argument('--R', type=float, default=0.05, help='Wheel radius [m]')
     parser.add_argument('--a', type=float, default=0.3, help='Half of robot length [m]')
     parser.add_argument('--b', type=float, default=0.3, help='Half of robot width [m]')
-    parser.add_argument('--T', type=int, default=30, help='Time of one period [s]')
+    parser.add_argument('--T', type=int, default=60, help='Time of one period [s]')
     parser.add_argument('--radius', type=float, default=2.0, help='Radius of circular path [m]')
     parser.add_argument('--pathtype', type=str, default='circle', help='Shape of the path')
     parser.add_argument('--scale', type=int, default=1, help='Scale of the path')
