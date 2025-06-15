@@ -237,6 +237,10 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
 
     fig, ax_left, ax_right_top, ax_right_bot, wheel_colors, vri_colors, vi_colors = setup_figure(radius, t, omega_data, vi_data, vri_data, scale)
     add_static_arrows(ax_left)
+    # Add dynamic text to bottom-right corner of ax_left
+    position_text = ax_left.text(0.95, 0.05, '', transform=ax_left.transAxes,
+                                 ha='right', va='bottom', fontsize=10,
+                                 bbox=dict(facecolor='white', edgecolor='gray', boxstyle='round,pad=0.3'))
 
     path_line, = ax_left.plot(x_path, y_path, '-' ,color='gray', label='Path')
     path_line.set_dashes([10, 10])
@@ -267,7 +271,7 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
         vx, vy = compute_velocity_vectors(x_path, y_path, dt)
         omega_z = compute_omega_z(theta_path, dt)
         omega_data = compute_omega_data(vx, vy, a, b, omega_z, R, n)
-        vi_data = compute_vi_data(vx, vy, a, b, omega_z, n)
+        # vi_data = compute_vi_data(vx, vy, a, b, omega_z, n)
         vri_data = compute_vri_data(vx, vy, omega_z, n, offsets)
         gamma = [np.pi/4, -np.pi/4, np.pi/4, -np.pi/4]
         
@@ -277,6 +281,9 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
         robot_marker.set_data([x], [y])
         rx, ry = get_square_frame(x, y, offsets)
         robot_frame.set_data(rx, ry)
+        
+        # Update position text
+        position_text.set_text(f'Position of robot center:\nx: {x_path[frame]:.2f}, y: {y_path[frame]:.2f}')
 
         # Remove old arrows
         for i in range(4):
@@ -408,7 +415,7 @@ def run_animation(R, a, b, T, radius, pathtype, scale):
         items = [robot_marker, robot_frame, *wheel_lines, *line_segments,
                 *scatter_points, time_line, v_arrow,
                 *wheel_arrows, *rot_arrows,
-                *vri_lines, *vri_scatter, *vxy_arrows]
+                *vri_lines, *vri_scatter, *vxy_arrows, position_text]
 
         print(f"vri: {vri_data[frame]}, omega:{omega_data[frame]}, Frame:{frame}")
         return items
@@ -435,7 +442,7 @@ if __name__ == '__main__':
     parser.add_argument('--R', type=float, default=0.05, help='Wheel radius [m]')
     parser.add_argument('--a', type=float, default=0.3, help='Half of robot length [m]')
     parser.add_argument('--b', type=float, default=0.3, help='Half of robot width [m]')
-    parser.add_argument('--T', type=int, default=60, help='Time of one period [s]')
+    parser.add_argument('--T', type=int, default=30, help='Time of one period [s]')
     parser.add_argument('--radius', type=float, default=2.0, help='Radius of circular path [m]')
     parser.add_argument('--pathtype', type=str, default='circle', help='Shape of the path')
     parser.add_argument('--scale', type=int, default=1, help='Scale of the path')
